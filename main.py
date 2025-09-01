@@ -12,6 +12,8 @@ from src.utils.password_reset import initiate_password_reset, reset_password
 from src.utils.data_storage import save_users_to_file, load_users_from_file
 from src.utils.security_utils import SessionManager
 from src.ui.interactive_session import start_interactive_session
+from src.utils.help_system import HelpSystem
+from src.utils.error_handler import ErrorHandler
 
 # Initialize the global user dictionary
 users = load_users_from_file()
@@ -447,6 +449,55 @@ def interactive(args):
     if user:
         start_interactive_session(user, users)
 
+def help_command(args):
+    """Display detailed help for commands"""
+    if args.command:
+        # Show help for specific command
+        help_text = HelpSystem.get_command_help(args.command, detailed=True)
+        print(help_text)
+    else:
+        # Show general help
+        print("🏦 Banking System - Command Help")
+        print("=" * 60)
+        print("Available commands:")
+        print()
+        
+        commands = HelpSystem.get_all_commands()
+        for command in sorted(commands):
+            help_info = HelpSystem.COMMAND_HELP[command]
+            print(f"  {command:<20} {help_info['description']}")
+        
+        print()
+        print("Usage:")
+        print("  python main.py <command> [arguments]")
+        print("  python main.py help <command>     # Detailed help for specific command")
+        print("  python main.py interactive        # Interactive mode with menus")
+        print()
+        print("Examples:")
+        print("  python main.py help login         # Help for login command")
+        print("  python main.py login user pass    # Login with credentials")
+        print("  python main.py interactive        # Start interactive session")
+        print()
+        print("For command-specific help, use: python main.py help <command>")
+
+def suggest_command(invalid_command):
+    """Suggest similar commands for invalid input"""
+    suggestions = HelpSystem.get_command_suggestions(invalid_command)
+    
+    if suggestions:
+        print(f"❓ Unknown command: '{invalid_command}'")
+        print()
+        print("💡 Did you mean:")
+        for suggestion in suggestions:
+            help_info = HelpSystem.COMMAND_HELP.get(suggestion, {})
+            description = help_info.get('description', 'No description available')
+            print(f"  • {suggestion:<15} {description}")
+        print()
+        print("For help: python main.py help <command>")
+        print("For all commands: python main.py help")
+    else:
+        print(ErrorHandler.handle_command_not_found(invalid_command))
+
 def get_session_token(args):
     """Get session token from args, environment, or file"""
     # Check if token provided as argument
@@ -487,28 +538,108 @@ def authenticate_user(args):
     return users[username]
 
 def parse_args():
-    parser = argparse.ArgumentParser(description=" Banking System")
-    subparsers = parser.add_subparsers()
+    parser = argparse.ArgumentParser(
+        description="🏦 Banking System - Secure Personal Banking Management",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python main.py login john_doe mypassword     # Login to your account
+  python main.py interactive                   # Start interactive mode
+  python main.py help login                    # Get help for login command
+  python main.py list_accounts                 # List your accounts
+  
+For detailed help on any command:
+  python main.py help <command>
+  
+For interactive mode with menus:
+  python main.py interactive
+        """
+    )
+    subparsers = parser.add_subparsers(dest='command', help='Available commands')
+
+    # help command
+    help_parser = subparsers.add_parser(
+        'help', 
+        help="Display detailed help for commands",
+        description="Get comprehensive help and usage examples for banking commands"
+    )
+    help_parser.add_argument(
+        "command", 
+        type=str, 
+        nargs='?',
+        help="Command to get help for (optional - shows all commands if omitted)"
+    )
+    help_parser.set_defaults(func=help_command)
 
     # register command
-    register_parser = subparsers.add_parser('register', help="Register a new a user")
-    register_parser.add_argument("username", type=str, help="Username")
-    register_parser.add_argument('password', type=str, help="Password")
-    register_parser.add_argument('email', type=str, help="Email")
+    register_parser = subparsers.add_parser(
+        'register', 
+        help="Register a new user account",
+        description="Create a new user account in the banking system with username, password, and email"
+    )
+    register_parser.add_argument(
+        "username", 
+        type=str, 
+        help="Unique username (letters, numbers, underscore only)"
+    )
+    register_parser.add_argument(
+        'password', 
+        type=str, 
+        help="Strong password (min 8 chars, mixed case, numbers)"
+    )
+    register_parser.add_argument(
+        'email', 
+        type=str, 
+        help="Valid email address for password reset"
+    )
     register_parser.set_defaults(func=register)
 
     # login command
-    login_parser = subparsers.add_parser("login", help="Login")
-    login_parser.add_argument("username", type=str, help="Username")
-    login_parser.add_argument("password", type=str, help="Password")
+    login_parser = subparsers.add_parser(
+        "login", 
+        help="Authenticate and create session token",
+        description="Login to the banking system and create a session token for subsequent operations"
+    )
+    login_parser.add_argument(
+        "username", 
+        type=str, 
+        help="Your registered username"
+    )
+    login_parser.add_argument(
+        "password", 
+        type=str, 
+        help="Your account password"
+    )
     login_parser.set_defaults(func=login)
 
     # add account command
-    add_account_parser = subparsers.add_parser("add_account", help="Add a new account")
-    add_account_parser.add_argument("type", type=str, choices=['savings', 'current', 'salary'], help="Account type")
-    add_account_parser.add_argument("balance", type=str, help="Initial Balance")
-    add_account_parser.add_argument("--overdraft_limit", type=float, default=0,  help="Overdraft limit (for current accounts)")
-    add_account_parser.add_argument("--token", type=str, help="Session token (optional if saved in .session file)")
+    add_account_parser = subparsers.add_parser(
+        "add_account", 
+        help="Create a new bank account",
+        description="Create a new bank account of specified type (savings, current, or salary)"
+    )
+    add_account_parser.add_argument(
+        "type", 
+        type=str, 
+        choices=['savings', 'current', 'salary'], 
+        help="Account type: savings (standard), current (with overdraft), or salary (payroll)"
+    )
+    add_account_parser.add_argument(
+        "balance", 
+        type=str, 
+        help="Initial balance (must be positive number)"
+    )
+    add_account_parser.add_argument(
+        "--overdraft_limit", 
+        type=float, 
+        default=0,  
+        help="Overdraft limit for current accounts (default: 0)"
+    )
+    add_account_parser.add_argument(
+        "--token", 
+        type=str, 
+        help="Session token (optional if saved in .session file)"
+    )
     add_account_parser.set_defaults(func=add_account)
 
     # deposit command
@@ -608,8 +739,54 @@ def parse_args():
 
 if __name__ == "__main__":
     current_user = None
-    args = parse_args()
-    if 'func' in args:
-        args.func(args)
-    else:
-        print("Invalid command. Use -h for help.")
+    
+    try:
+        args = parse_args()
+        
+        # Check if a command was provided
+        if hasattr(args, 'func'):
+            # Validate command usage before execution
+            command_name = args.command if hasattr(args, 'command') else 'unknown'
+            
+            # Execute the command with enhanced error handling
+            try:
+                args.func(args)
+            except KeyboardInterrupt:
+                print("\n\n⚠️  Operation interrupted by user")
+                sys.exit(0)
+            except Exception as e:
+                print(f"\n❌ Error executing command '{command_name}': {e}")
+                
+                # Provide helpful error context
+                if command_name in HelpSystem.get_all_commands():
+                    print(f"\n💡 For help with this command:")
+                    print(f"   python main.py help {command_name}")
+                
+                sys.exit(1)
+        else:
+            # No command provided or invalid command
+            if len(sys.argv) > 1:
+                invalid_command = sys.argv[1]
+                suggest_command(invalid_command)
+            else:
+                print("🏦 Banking System")
+                print("=" * 50)
+                print("No command provided. Use one of the following:")
+                print()
+                print("  python main.py help              # Show all commands")
+                print("  python main.py interactive       # Start interactive mode")
+                print("  python main.py login <user> <pass>  # Login to your account")
+                print()
+                print("For detailed help: python main.py help <command>")
+            
+            sys.exit(1)
+            
+    except SystemExit:
+        # Handle argparse exits gracefully
+        pass
+    except Exception as e:
+        print(f"\n❌ Unexpected error: {e}")
+        print("\n💡 Try:")
+        print("   python main.py help              # For available commands")
+        print("   python main.py interactive       # For interactive mode")
+        sys.exit(1)

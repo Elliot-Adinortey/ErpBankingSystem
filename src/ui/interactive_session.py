@@ -202,30 +202,12 @@ class InteractiveSession:
         return (minutes_inactive >= self.INACTIVITY_WARNING_MINUTES and 
                 not self.warned_timeout)
     
-    def _show_help(self):
-        """Display help information"""
-        print("\n" + "=" * 60)
-        print("  HELP - Interactive Banking System")
-        print("=" * 60)
-        print("Navigation:")
-        print("  • Select menu options by entering the number (1-6)")
-        print("  • Type 'help' at any prompt for assistance")
-        print("  • Type 'exit', 'quit', or 'logout' to end session")
-        print("  • Use Ctrl+C to interrupt current operation")
-        print()
-        print("Menu Options:")
-        print("  1. Account Management - Create, view, and manage accounts")
-        print("  2. Banking Operations - Deposits, withdrawals, transfers")
-        print("  3. Transaction History - View and filter transaction records")
-        print("  4. Account Statements - Generate account statements")
-        print("  5. Settings & Profile - Update account settings and profile")
-        print("  6. Logout - End session and exit")
-        print()
-        print("Session Information:")
-        print(f"  • Session timeout: {self.SESSION_TIMEOUT_MINUTES} minutes of inactivity")
-        print(f"  • Warning shown at: {self.INACTIVITY_WARNING_MINUTES} minutes")
-        print("  • All changes are automatically saved")
-        print("=" * 60)
+    def _show_help(self, context='main_menu'):
+        """Display context-sensitive help information"""
+        from src.utils.help_system import HelpSystem
+        
+        help_text = HelpSystem.get_interactive_help(context)
+        print(help_text)
     
     def _handle_account_management(self):
         """Handle account management submenu"""
@@ -240,10 +222,14 @@ class InteractiveSession:
             print("5. Financial Overview")
             print("6. Back to Main Menu")
             print("=" * 50)
+            print("Type 'help' for assistance with account management")
             
             choice = input("Select an option (1-6): ").strip()
             
-            if choice == '1':
+            if choice.lower() == 'help':
+                self._show_help('account_management')
+                continue
+            elif choice == '1':
                 self._list_accounts()
             elif choice == '2':
                 self._create_account()
@@ -257,6 +243,7 @@ class InteractiveSession:
                 return True
             else:
                 print("❌ Invalid choice. Please select 1-6.")
+                print("💡 Type 'help' for assistance or guidance.")
             
             if not self._check_session_timeout():
                 return False
@@ -274,10 +261,14 @@ class InteractiveSession:
             print("5. Transfer History")
             print("6. Back to Main Menu")
             print("=" * 50)
+            print("Type 'help' for assistance with banking operations")
             
             choice = input("Select an option (1-6): ").strip()
             
-            if choice == '1':
+            if choice.lower() == 'help':
+                self._show_help('banking_operations')
+                continue
+            elif choice == '1':
                 self._deposit_money()
             elif choice == '2':
                 self._withdraw_money()
@@ -291,6 +282,7 @@ class InteractiveSession:
                 return True
             else:
                 print("❌ Invalid choice. Please select 1-6.")
+                print("💡 Type 'help' for assistance or guidance.")
             
             if not self._check_session_timeout():
                 return False
@@ -309,10 +301,14 @@ class InteractiveSession:
             print("6. Export Transactions")
             print("7. Back to Main Menu")
             print("=" * 50)
+            print("Type 'help' for assistance with transaction history")
             
             choice = input("Select an option (1-7): ").strip()
             
-            if choice == '1':
+            if choice.lower() == 'help':
+                self._show_help('transaction_history')
+                continue
+            elif choice == '1':
                 self._view_all_transactions()
             elif choice == '2':
                 self._filter_by_account()
@@ -328,6 +324,7 @@ class InteractiveSession:
                 return True
             else:
                 print("❌ Invalid choice. Please select 1-7.")
+                print("💡 Type 'help' for assistance or guidance.")
             
             if not self._check_session_timeout():
                 return False
@@ -352,10 +349,14 @@ class InteractiveSession:
             print("5. Help & Documentation")
             print("6. Back to Main Menu")
             print("=" * 50)
+            print("Type 'help' for assistance with settings")
             
             choice = input("Select an option (1-6): ").strip()
             
-            if choice == '1':
+            if choice.lower() == 'help':
+                self._show_help('settings')
+                continue
+            elif choice == '1':
                 self._update_nicknames()
             elif choice == '2':
                 self._change_account_settings()
@@ -364,11 +365,12 @@ class InteractiveSession:
             elif choice == '4':
                 self._session_info()
             elif choice == '5':
-                self._show_help()
+                self._show_help('main_menu')  # Show main help
             elif choice == '6':
                 return True
             else:
                 print("❌ Invalid choice. Please select 1-6.")
+                print("💡 Type 'help' for assistance or guidance.")
             
             if not self._check_session_timeout():
                 return False
