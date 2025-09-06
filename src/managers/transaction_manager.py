@@ -44,7 +44,7 @@ class TransactionManager:
         
         # Collect all transactions with account context
         for acc in accounts_to_check:
-            for transaction in acc.transaction_history:
+            for transaction in acc.transactions:
                 transaction_data = {
                     'account': acc.get_display_name(),
                     'account_type': acc.account_type,

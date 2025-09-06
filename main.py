@@ -14,6 +14,10 @@ from src.utils.security_utils import SessionManager
 from src.ui.interactive_session import start_interactive_session
 from src.utils.help_system import HelpSystem
 from src.utils.error_handler import ErrorHandler
+from src.utils.statement_generator import StatementGenerator
+from src.utils.data_export_import import DataExportImportManager
+from src.utils.audit_logger import get_audit_logger, AuditEventType
+from src.managers.batch_manager import BatchManager
 
 # Initialize the global user dictionary
 users = load_users_from_file()
@@ -29,10 +33,21 @@ def login(args):
     # Clean up expired sessions first
     SessionManager.cleanup_expired_sessions()
     
+    # Get audit logger
+    audit_logger = get_audit_logger()
+    
     user = login_user(users, args.username, args.password)
     if user:
         # Create session token
         token = SessionManager.create_session(args.username)
+        
+        # Log successful login
+        audit_logger.log_login_attempt(
+            username=args.username,
+            success=True,
+            session_id=token
+        )
+        
         print(f"Login successful for {args.username}")
         print(f"Session token: {token}")
         print("Use this token for subsequent operations or save it to SESSION_TOKEN environment variable")
@@ -42,37 +57,180 @@ def login(args):
             f.write(token)
         print("Session token saved to .session file")
     else:
+        # Log failed login
+        audit_logger.log_login_attempt(
+            username=args.username,
+            success=False,
+            failure_reason="Invalid credentials"
+        )
         print("Login failed")
 
 def add_account(args):
     user = authenticate_user(args)
+    audit_logger = get_audit_logger()
+    
     if user:
-        user.add_account(Account(args.type, balance=float(args.balance), overdraft_limit=args.overdraft_limit))
-        save_users_to_file(users)
+        try:
+            account = Account(args.type, balance=float(args.balance), overdraft_limit=args.overdraft_limit)
+            user.add_account(account)
+            save_users_to_file(users)
+            
+            # Log successful account creation
+            audit_logger.log_banking_operation(
+                operation_type="account_create",
+                user=user.username,
+                account_identifier=args.type,
+                success=True,
+                session_id=get_session_token(args),
+                additional_details={
+                    "initial_balance": float(args.balance),
+                    "overdraft_limit": args.overdraft_limit
+                }
+            )
+        except Exception as e:
+            # Log failed account creation
+            audit_logger.log_banking_operation(
+                operation_type="account_create",
+                user=user.username,
+                account_identifier=args.type,
+                success=False,
+                session_id=get_session_token(args),
+                additional_details={
+                    "error": str(e),
+                    "attempted_balance": args.balance,
+                    "attempted_overdraft": args.overdraft_limit
+                }
+            )
+            raise
     # Error message already printed by authenticate_user
 
 def deposit(args):
     user = authenticate_user(args)
+    audit_logger = get_audit_logger()
+    
     if user:
         account = user.get_account(args.type)
         if account:
-            account.deposit(args.amount)
-            save_users_to_file(users)
+            try:
+                old_balance = account.balance
+                account.deposit(args.amount)
+                save_users_to_file(users)
+                
+                # Log successful deposit
+                audit_logger.log_banking_operation(
+                    operation_type="deposit",
+                    user=user.username,
+                    account_identifier=args.type,
+                    amount=args.amount,
+                    success=True,
+                    session_id=get_session_token(args),
+                    additional_details={
+                        "old_balance": old_balance,
+                        "new_balance": account.balance
+                    }
+                )
+            except Exception as e:
+                # Log failed deposit
+                audit_logger.log_banking_operation(
+                    operation_type="deposit",
+                    user=user.username,
+                    account_identifier=args.type,
+                    amount=args.amount,
+                    success=False,
+                    session_id=get_session_token(args),
+                    additional_details={"error": str(e)}
+                )
+                raise
+        else:
+            # Log failed deposit due to account not found
+            audit_logger.log_banking_operation(
+                operation_type="deposit",
+                user=user.username,
+                account_identifier=args.type,
+                amount=args.amount,
+                success=False,
+                session_id=get_session_token(args),
+                additional_details={"error": "Account not found"}
+            )
 
 def withdraw(args):
     user = authenticate_user(args)
+    audit_logger = get_audit_logger()
+    
     if user:
         account = user.get_account(args.type)
         if account:
-            account.withdraw(args.amount)
-            save_users_to_file(users)
+            try:
+                old_balance = account.balance
+                account.withdraw(args.amount)
+                save_users_to_file(users)
+                
+                # Log successful withdrawal
+                audit_logger.log_banking_operation(
+                    operation_type="withdrawal",
+                    user=user.username,
+                    account_identifier=args.type,
+                    amount=args.amount,
+                    success=True,
+                    session_id=get_session_token(args),
+                    additional_details={
+                        "old_balance": old_balance,
+                        "new_balance": account.balance
+                    }
+                )
+            except Exception as e:
+                # Log failed withdrawal
+                audit_logger.log_banking_operation(
+                    operation_type="withdrawal",
+                    user=user.username,
+                    account_identifier=args.type,
+                    amount=args.amount,
+                    success=False,
+                    session_id=get_session_token(args),
+                    additional_details={"error": str(e)}
+                )
+                raise
+        else:
+            # Log failed withdrawal due to account not found
+            audit_logger.log_banking_operation(
+                operation_type="withdrawal",
+                user=user.username,
+                account_identifier=args.type,
+                amount=args.amount,
+                success=False,
+                session_id=get_session_token(args),
+                additional_details={"error": "Account not found"}
+            )
 
 def view_balance(args):
     user = authenticate_user(args)
+    audit_logger = get_audit_logger()
+    
     if user:
         account = user.get_account(args.type)
         if account:
-            print(f"Balance: ${account.get_balance()}")
+            balance = account.get_balance()
+            print(f"Balance: ${balance}")
+            
+            # Log balance inquiry
+            audit_logger.log_banking_operation(
+                operation_type="balance_inquiry",
+                user=user.username,
+                account_identifier=args.type,
+                success=True,
+                session_id=get_session_token(args),
+                additional_details={"balance": balance}
+            )
+        else:
+            # Log failed balance inquiry
+            audit_logger.log_banking_operation(
+                operation_type="balance_inquiry",
+                user=user.username,
+                account_identifier=args.type,
+                success=False,
+                session_id=get_session_token(args),
+                additional_details={"error": "Account not found"}
+            )
 
 def reset_password_init(args):
     initiate_password_reset(users, args.username)
@@ -84,11 +242,23 @@ def reset_password_complete(args):
 def logout(args):
     """Logout and invalidate session"""
     token = get_session_token(args)
-    if token and SessionManager.invalidate_session(token):
-        # Remove session file
-        if os.path.exists('.session'):
-            os.remove('.session')
-        print("Logged out successfully")
+    audit_logger = get_audit_logger()
+    
+    if token:
+        username = SessionManager.validate_session(token)
+        if username and SessionManager.invalidate_session(token):
+            # Log logout
+            audit_logger.log_logout(
+                username=username,
+                session_id=token
+            )
+            
+            # Remove session file
+            if os.path.exists('.session'):
+                os.remove('.session')
+            print("Logged out successfully")
+        else:
+            print("No active session found")
     else:
         print("No active session found")
 
@@ -206,10 +376,29 @@ def financial_overview(args):
 def transfer(args):
     """Transfer money between user's accounts"""
     user = authenticate_user(args)
+    audit_logger = get_audit_logger()
+    
     if user:
         # Validate and execute transfer
         success, message, transfer_id = user.transfer_between_accounts(
             args.from_account, args.to_account, args.amount, args.memo
+        )
+        
+        # Log transfer attempt
+        audit_logger.log_banking_operation(
+            operation_type="transfer",
+            user=user.username,
+            account_identifier=f"{args.from_account} -> {args.to_account}",
+            amount=args.amount,
+            success=success,
+            session_id=get_session_token(args),
+            additional_details={
+                "from_account": args.from_account,
+                "to_account": args.to_account,
+                "memo": args.memo,
+                "transfer_id": transfer_id,
+                "message": message
+            }
         )
         
         if success:
@@ -239,6 +428,8 @@ def transfer(args):
 def transaction_history(args):
     """Display transaction history with filtering options"""
     user = authenticate_user(args)
+    audit_logger = get_audit_logger()
+    
     if user:
         # Parse date arguments
         start_date = None
@@ -297,6 +488,24 @@ def transaction_history(args):
             if not transactions:
                 print("No transactions found matching the specified filters.")
                 return
+        
+        # Log transaction history access
+        audit_logger.log_operation(
+            event_type=AuditEventType.TRANSACTION_HISTORY,
+            user=user.username,
+            operation=f"Transaction history accessed - {len(transactions)} records",
+            success=True,
+            session_id=get_session_token(args),
+            details={
+                "account": args.account,
+                "start_date": start_date.isoformat() if start_date else None,
+                "end_date": end_date.isoformat() if end_date else None,
+                "page": args.page,
+                "page_size": args.page_size,
+                "filters_applied": bool(args.type or args.min_amount is not None or args.max_amount is not None),
+                "record_count": len(transactions)
+            }
+        )
         
         # Display transactions
         display_transaction_history(transactions, result, args.sort_by, args.export_format)
@@ -466,6 +675,261 @@ def help_command(args):
         for command in sorted(commands):
             help_info = HelpSystem.COMMAND_HELP[command]
             print(f"  {command:<20} {help_info['description']}")
+
+def generate_statement(args):
+    """Generate account statement for specified period"""
+    user = authenticate_user(args)
+    if user:
+        try:
+            statement_generator = StatementGenerator(user)
+            
+            # Parse date arguments
+            start_date = None
+            end_date = None
+            
+            if args.start_date:
+                start_date = parse_date_input(args.start_date)
+            if args.end_date:
+                end_date = parse_date_input(args.end_date)
+            
+            # Generate statement
+            result = statement_generator.generate_statement(
+                args.account, 
+                start_date, 
+                end_date, 
+                args.format
+            )
+            
+            if args.export:
+                # Export to file
+                filepath = statement_generator.export_statement_to_file(result, args.filename)
+                print(f"Statement exported to: {filepath}")
+            else:
+                # Display statement
+                print(result['formatted_content'])
+                
+        except ValueError as e:
+            ErrorHandler.handle_invalid_account(str(e), [])
+        except Exception as e:
+            print(f"Error generating statement: {e}")
+
+def export_data(args):
+    """Export account or transaction data"""
+    user = authenticate_user(args)
+    audit_logger = get_audit_logger()
+    
+    if user:
+        try:
+            export_manager = DataExportImportManager(user)
+            
+            # Prepare export arguments
+            export_kwargs = {}
+            if args.data_type == 'transactions':
+                if args.account:
+                    export_kwargs['account_identifier'] = args.account
+                if args.start_date:
+                    export_kwargs['start_date'] = parse_date_input(args.start_date)
+                if args.end_date:
+                    export_kwargs['end_date'] = parse_date_input(args.end_date)
+            
+            if args.filename:
+                export_kwargs['filename'] = args.filename
+            
+            # Export data
+            filepath = export_manager.export_data(args.data_type, args.format, **export_kwargs)
+            
+            # Log successful export
+            audit_logger.log_operation(
+                event_type=AuditEventType.DATA_EXPORT,
+                user=user.username,
+                operation=f"Data export: {args.data_type} ({args.format})",
+                success=True,
+                session_id=get_session_token(args),
+                details={
+                    "data_type": args.data_type,
+                    "format": args.format,
+                    "filepath": filepath,
+                    "export_kwargs": export_kwargs
+                }
+            )
+            
+            print(f"Data exported successfully to: {filepath}")
+            
+            # Show export summary
+            if args.data_type == 'transactions':
+                print(f"Export type: Transaction data ({args.format.upper()})")
+                if args.account:
+                    print(f"Account: {args.account}")
+                if args.start_date or args.end_date:
+                    print(f"Date range: {args.start_date or 'beginning'} to {args.end_date or 'now'}")
+            elif args.data_type == 'accounts':
+                print(f"Export type: Account data ({args.format.upper()})")
+                print(f"Total accounts: {len(user.accounts)}")
+            elif args.data_type == 'full_backup':
+                print(f"Export type: Full backup ({args.format.upper()})")
+                print("Includes: User data, all accounts, and complete transaction history")
+                
+        except ValueError as e:
+            # Log failed export
+            audit_logger.log_operation(
+                event_type=AuditEventType.DATA_EXPORT,
+                user=user.username,
+                operation=f"Data export failed: {args.data_type} ({args.format})",
+                success=False,
+                session_id=get_session_token(args),
+                details={
+                    "data_type": args.data_type,
+                    "format": args.format,
+                    "error": str(e),
+                    "error_type": "ValueError"
+                }
+            )
+            print(f"Export error: {e}")
+        except Exception as e:
+            # Log unexpected export error
+            audit_logger.log_error(
+                error=e,
+                context={
+                    "operation": "data_export",
+                    "data_type": args.data_type,
+                    "format": args.format
+                },
+                user=user.username,
+                session_id=get_session_token(args)
+            )
+            print(f"Unexpected error during export: {e}")
+
+def import_data(args):
+    """Import account or transaction data"""
+    user = authenticate_user(args)
+    audit_logger = get_audit_logger()
+    
+    if user:
+        try:
+            import_manager = DataExportImportManager(user)
+            
+            # Validate file exists
+            if not os.path.exists(args.filepath):
+                print(f"Error: File not found: {args.filepath}")
+                return
+            
+            # Perform import (with validation first if requested)
+            if args.validate_only:
+                print("Validating import file...")
+                result = import_manager.import_data(args.data_type, args.filepath, validate_only=True)
+                print("Validation Results:")
+                
+                # Log validation
+                audit_logger.log_operation(
+                    event_type=AuditEventType.DATA_IMPORT,
+                    user=user.username,
+                    operation=f"Data validation: {args.data_type}",
+                    success=True,
+                    session_id=get_session_token(args),
+                    details={
+                        "data_type": args.data_type,
+                        "filepath": args.filepath,
+                        "validation_only": True,
+                        "result": result
+                    }
+                )
+            else:
+                print(f"Importing {args.data_type} from {args.filepath}...")
+                result = import_manager.import_data(args.data_type, args.filepath, validate_only=False)
+                print("Import Results:")
+                
+                # Log import
+                audit_logger.log_operation(
+                    event_type=AuditEventType.DATA_IMPORT,
+                    user=user.username,
+                    operation=f"Data import: {args.data_type}",
+                    success=True,
+                    session_id=get_session_token(args),
+                    details={
+                        "data_type": args.data_type,
+                        "filepath": args.filepath,
+                        "validation_only": False,
+                        "result": result
+                    }
+                )
+            
+            # Display results
+            if args.data_type == 'transactions':
+                print(f"  Total rows processed: {result['total_rows']}")
+                print(f"  Valid transactions: {result['valid_transactions']}")
+                print(f"  Invalid transactions: {result['invalid_transactions']}")
+                
+                if not args.validate_only and result['valid_transactions'] > 0:
+                    print(f"  Successfully imported: {len(result['imported_transactions'])} transactions")
+                    # Save changes
+                    save_users_to_file(users)
+                    
+            elif args.data_type == 'accounts':
+                print(f"  Total accounts processed: {result['total_accounts']}")
+                print(f"  Valid accounts: {result['valid_accounts']}")
+                print(f"  Invalid accounts: {result['invalid_accounts']}")
+                
+                if not args.validate_only and result['valid_accounts'] > 0:
+                    print(f"  Successfully imported: {len(result['imported_accounts'])} accounts")
+                    # Save changes
+                    save_users_to_file(users)
+            
+            # Display errors if any
+            if result['errors']:
+                print(f"\nErrors encountered ({len(result['errors'])}):")
+                for error in result['errors'][:10]:  # Show first 10 errors
+                    print(f"  - {error}")
+                if len(result['errors']) > 10:
+                    print(f"  ... and {len(result['errors']) - 10} more errors")
+            
+            if args.validate_only:
+                print("\nValidation complete. Use --import to actually import the data.")
+            
+        except FileNotFoundError as e:
+            # Log file not found error
+            audit_logger.log_operation(
+                event_type=AuditEventType.DATA_IMPORT,
+                user=user.username,
+                operation=f"Data import failed: {args.data_type}",
+                success=False,
+                session_id=get_session_token(args),
+                details={
+                    "data_type": args.data_type,
+                    "filepath": args.filepath,
+                    "error": str(e),
+                    "error_type": "FileNotFoundError"
+                }
+            )
+            print(f"File error: {e}")
+        except ValueError as e:
+            # Log validation error
+            audit_logger.log_operation(
+                event_type=AuditEventType.DATA_IMPORT,
+                user=user.username,
+                operation=f"Data import failed: {args.data_type}",
+                success=False,
+                session_id=get_session_token(args),
+                details={
+                    "data_type": args.data_type,
+                    "filepath": args.filepath,
+                    "error": str(e),
+                    "error_type": "ValueError"
+                }
+            )
+            print(f"Import error: {e}")
+        except Exception as e:
+            # Log unexpected import error
+            audit_logger.log_error(
+                error=e,
+                context={
+                    "operation": "data_import",
+                    "data_type": args.data_type,
+                    "filepath": args.filepath
+                },
+                user=user.username,
+                session_id=get_session_token(args)
+            )
+            print(f"Unexpected error during import: {e}")
         
         print()
         print("Usage:")
@@ -519,6 +983,147 @@ def get_session_token(args):
     
     return None
 
+def view_audit_logs(args):
+    """View audit logs with filtering options"""
+    user = authenticate_user(args)
+    if not user:
+        return
+    
+    audit_logger = get_audit_logger()
+    
+    try:
+        # Prepare filters
+        filters = {}
+        if args.user:
+            filters['user'] = args.user
+        if args.event_type:
+            filters['event_type'] = args.event_type
+        if args.failed_only:
+            filters['success'] = False
+        
+        # Calculate date range
+        from datetime import datetime, timedelta
+        start_date = datetime.now() - timedelta(hours=args.hours)
+        
+        # Get audit logs
+        logs = audit_logger.get_audit_logs(
+            filters=filters,
+            start_date=start_date,
+            limit=args.limit
+        )
+        
+        if not logs:
+            print("No audit logs found matching the specified criteria.")
+            return
+        
+        # Display logs
+        print(f"\n=== Audit Logs ===")
+        print(f"Showing {len(logs)} entries from the last {args.hours} hours")
+        if filters:
+            print(f"Filters applied: {filters}")
+        print("=" * 80)
+        
+        print(f"{'Timestamp':<20} {'User':<15} {'Event':<15} {'Success':<8} {'Operation'}")
+        print("-" * 80)
+        
+        for log_entry in logs:
+            timestamp_str = log_entry.timestamp.strftime('%Y-%m-%d %H:%M:%S')
+            user_str = (log_entry.user or 'system')[:14]
+            event_str = log_entry.event_type.value[:14]
+            success_str = '✓' if log_entry.success else '✗'
+            operation_str = log_entry.operation[:40] + '...' if len(log_entry.operation) > 40 else log_entry.operation
+            
+            print(f"{timestamp_str:<20} {user_str:<15} {event_str:<15} {success_str:<8} {operation_str}")
+        
+        print("=" * 80)
+        
+        # Log the audit access
+        audit_logger.log_operation(
+            event_type=AuditEventType.SYSTEM_EVENT,
+            user=user.username,
+            operation=f"Audit logs accessed - {len(logs)} entries viewed",
+            success=True,
+            session_id=get_session_token(args),
+            details={
+                "filters": filters,
+                "hours": args.hours,
+                "limit": args.limit,
+                "entries_returned": len(logs)
+            }
+        )
+        
+    except Exception as e:
+        audit_logger.log_error(
+            error=e,
+            context={"operation": "view_audit_logs"},
+            user=user.username,
+            session_id=get_session_token(args)
+        )
+        print(f"Error accessing audit logs: {e}")
+
+def view_audit_stats(args):
+    """View audit log statistics"""
+    user = authenticate_user(args)
+    if not user:
+        return
+    
+    audit_logger = get_audit_logger()
+    
+    try:
+        # Get statistics
+        stats = audit_logger.get_statistics(hours=args.hours)
+        
+        # Display statistics
+        print(f"\n=== Audit Log Statistics ===")
+        print(f"Analysis period: Last {args.hours} hours")
+        print("=" * 50)
+        
+        print(f"Total Events: {stats['total_events']}")
+        print(f"Successful Operations: {stats['successful_operations']}")
+        print(f"Failed Operations: {stats['failed_operations']}")
+        print(f"Unique Users: {stats['unique_users']}")
+        print(f"Error Count: {stats['error_count']}")
+        
+        print(f"\nLogin Activity:")
+        print(f"  Total Login Attempts: {stats['login_attempts']}")
+        print(f"  Successful Logins: {stats['successful_logins']}")
+        print(f"  Failed Logins: {stats['failed_logins']}")
+        
+        if stats['event_types']:
+            print(f"\nEvent Types:")
+            for event_type, count in sorted(stats['event_types'].items(), key=lambda x: x[1], reverse=True):
+                print(f"  {event_type}: {count}")
+        
+        if stats['users_activity']:
+            print(f"\nUser Activity (Top 10):")
+            sorted_users = sorted(stats['users_activity'].items(), key=lambda x: x[1], reverse=True)
+            for username, count in sorted_users[:10]:
+                print(f"  {username}: {count} operations")
+        
+        print("=" * 50)
+        
+        # Log the stats access
+        audit_logger.log_operation(
+            event_type=AuditEventType.SYSTEM_EVENT,
+            user=user.username,
+            operation=f"Audit statistics accessed - {args.hours}h period",
+            success=True,
+            session_id=get_session_token(args),
+            details={
+                "hours": args.hours,
+                "stats": stats
+            }
+        )
+        
+    except Exception as e:
+        audit_logger.log_error(
+            error=e,
+            context={"operation": "view_audit_stats"},
+            user=user.username,
+            session_id=get_session_token(args)
+        )
+        print(f"Error accessing audit statistics: {e}")
+
 def authenticate_user(args):
     """Authenticate user using session token"""
     token = get_session_token(args)
@@ -536,6 +1141,454 @@ def authenticate_user(args):
         return None
     
     return users[username]
+
+def batch_operations(args):
+    """Process batch operations from file"""
+    user = authenticate_user(args)
+    audit_logger = get_audit_logger()
+    
+    if not user:
+        return
+    
+    try:
+        batch_manager = BatchManager(user)
+        
+        # Check if file exists
+        if not os.path.exists(args.file):
+            print(f"Error: Batch file not found: {args.file}")
+            return
+        
+        print(f"Processing batch file: {args.file}")
+        
+        if args.preview:
+            print("🔍 PREVIEW MODE - Operations will be validated but not executed")
+        
+        print("-" * 60)
+        
+        # Progress callback for real-time updates
+        def progress_callback(completed, total, operation):
+            if not args.preview:
+                progress_percent = (completed / total * 100) if total > 0 else 0
+                status_symbol = "✓" if operation.status.value == "success" else "✗"
+                print(f"[{progress_percent:5.1f}%] {status_symbol} {operation.operation_type.upper()}: {operation.result or operation.error_message}")
+        
+        # Process batch file
+        operations, summary = batch_manager.process_batch_file(
+            args.file, 
+            preview_mode=args.preview,
+            progress_callback=progress_callback if not args.preview else None
+        )
+        
+        # Log batch operation
+        audit_logger.log_operation(
+            event_type=AuditEventType.BATCH_OPERATION,
+            user=user.username,
+            operation=f"Batch processing: {args.file} ({'preview' if args.preview else 'execute'})",
+            success=summary['failed'] == 0,
+            session_id=get_session_token(args),
+            details={
+                "file_path": args.file,
+                "preview_mode": args.preview,
+                "total_operations": summary['total_operations'],
+                "successful": summary['successful'],
+                "failed": summary['failed'],
+                "success_rate": summary['success_rate']
+            }
+        )
+        
+        print("-" * 60)
+        
+        # Display summary
+        print(f"\n📊 BATCH OPERATION SUMMARY")
+        print("=" * 40)
+        print(f"File: {args.file}")
+        print(f"Mode: {'Preview' if args.preview else 'Execute'}")
+        print(f"Total Operations: {summary['total_operations']}")
+        
+        if args.preview:
+            # In preview mode, show validation results
+            validated = summary['total_operations'] - summary['failed']
+            print(f"Valid Operations: {validated}")
+            print(f"Invalid Operations: {summary['failed']}")
+            if summary['total_operations'] > 0:
+                validation_rate = (validated / summary['total_operations'] * 100)
+                print(f"Validation Rate: {validation_rate:.1f}%")
+        else:
+            print(f"Successful: {summary['successful']}")
+            print(f"Failed: {summary['failed']}")
+            print(f"Success Rate: {summary['success_rate']:.1f}%")
+        
+        if summary['total_execution_time'] > 0:
+            print(f"Execution Time: {summary['total_execution_time']:.2f} seconds")
+        
+        # Show operations by type
+        if summary['operations_by_type']:
+            print(f"\nOperations by Type:")
+            for op_type, stats in summary['operations_by_type'].items():
+                print(f"  {op_type.upper()}: {stats['successful']}/{stats['total']} successful")
+        
+        # Show failed operations if any
+        if summary['failed_operations']:
+            print(f"\n❌ Failed Operations ({len(summary['failed_operations'])}):")
+            for failed_op in summary['failed_operations'][:5]:  # Show first 5
+                line_info = f" (Line {failed_op['line_number']})" if failed_op['line_number'] else ""
+                print(f"  • {failed_op['operation_type'].upper()}{line_info}: {failed_op['error_message']}")
+            
+            if len(summary['failed_operations']) > 5:
+                print(f"  ... and {len(summary['failed_operations']) - 5} more failures")
+        
+        # Generate detailed report if requested
+        if args.report:
+            from src.managers.batch_manager import BatchReporter
+            detailed_report = BatchReporter.generate_detailed_report(operations)
+            
+            report_filename = f"batch_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+            with open(report_filename, 'w') as f:
+                f.write(detailed_report)
+            
+            print(f"\n📄 Detailed report saved to: {report_filename}")
+        
+        # Save changes if operations were executed
+        if not args.preview and summary['successful'] > 0:
+            save_users_to_file(users)
+            print(f"\n💾 Changes saved to user data file")
+        
+        if args.preview:
+            print(f"\n💡 To execute these operations, run without --preview flag")
+        
+        print("=" * 40)
+        
+    except Exception as e:
+        # Log batch operation error
+        audit_logger.log_error(
+            error=e,
+            context={
+                "operation": "batch_operations",
+                "file_path": args.file,
+                "preview_mode": args.preview
+            },
+            user=user.username,
+            session_id=get_session_token(args)
+        )
+        print(f"❌ Batch operation failed: {e}")
+
+def batch_template(args):
+    """Create batch operation template file"""
+    user = authenticate_user(args)
+    if not user:
+        return
+    
+    try:
+        batch_manager = BatchManager(user)
+        
+        # Create template
+        result = batch_manager.create_batch_template(args.filename, args.format)
+        print(f"✓ {result}")
+        
+        # Show template usage
+        print(f"\n📝 Template Usage:")
+        print(f"1. Edit the template file: {args.filename}")
+        print(f"2. Add your operations following the examples")
+        print(f"3. Preview: python main.py batch_operations {args.filename} --preview")
+        print(f"4. Execute: python main.py batch_operations {args.filename}")
+        
+        if args.format == 'csv':
+            print(f"\n💡 CSV Format Tips:")
+            print(f"  • Lines starting with # are comments (ignored)")
+            print(f"  • Required columns: operation_type, account, amount")
+            print(f"  • Optional columns: to_account, memo, nickname, overdraft_limit")
+            print(f"  • Supported operations: deposit, withdraw, transfer, create_account, update_nickname")
+        else:
+            print(f"\n💡 JSON Format Tips:")
+            print(f"  • Each operation has 'operation_type' and 'parameters'")
+            print(f"  • Parameters vary by operation type")
+            print(f"  • Use proper JSON syntax (quotes, commas, brackets)")
+        
+    except Exception as e:
+        print(f"❌ Template creation failed: {e}")
+
+def batch_status(args):
+    """Show batch operation status and recent history"""
+    user = authenticate_user(args)
+    if not user:
+        return
+    
+    audit_logger = get_audit_logger()
+    
+    try:
+        # Get recent batch operations from audit logs
+        recent_batches = audit_logger.get_recent_operations(
+            user=user.username,
+            operation_type="batch_operations",
+            hours=args.hours,
+            limit=args.limit
+        )
+        
+        if not recent_batches:
+            print(f"📊 No batch operations found in the last {args.hours} hours")
+            return
+        
+        print(f"📊 BATCH OPERATION HISTORY")
+        print(f"User: {user.username}")
+        print(f"Period: Last {args.hours} hours")
+        print("=" * 60)
+        
+        for batch in recent_batches:
+            timestamp = batch.get('timestamp', 'Unknown')
+            details = batch.get('details', {})
+            success = batch.get('success', False)
+            
+            status_symbol = "✓" if success else "✗"
+            mode = "Preview" if details.get('preview_mode') else "Execute"
+            
+            print(f"{status_symbol} {timestamp}")
+            print(f"   File: {details.get('file_path', 'Unknown')}")
+            print(f"   Mode: {mode}")
+            print(f"   Operations: {details.get('total_operations', 0)}")
+            print(f"   Success Rate: {details.get('success_rate', 0):.1f}%")
+            print()
+        
+        print("=" * 60)
+        print(f"💡 Use 'python main.py batch_template' to create new batch files")
+        
+    except Exception as e:
+        print(f"❌ Failed to retrieve batch status: {e}")
+
+def update_account_settings(args):
+    """Update account settings (nickname and overdraft limit)"""
+    user = authenticate_user(args)
+    audit_logger = get_audit_logger()
+    
+    if not user:
+        return
+    
+    # Validate that at least one setting is provided
+    if args.nickname is None and args.overdraft_limit is None:
+        print("❌ Error: At least one setting must be provided (--nickname or --overdraft-limit)")
+        print("💡 Use: python main.py help update_account_settings")
+        return
+    
+    try:
+        # Update account settings
+        changes = user.update_account_settings(
+            args.account,
+            nickname=args.nickname,
+            overdraft_limit=args.overdraft_limit
+        )
+        
+        if changes:
+            print(f"✓ Account settings updated successfully:")
+            for change in changes:
+                print(f"  • {change}")
+            
+            # Save changes
+            save_users_to_file(users)
+            
+            # Log successful update
+            audit_logger.log_banking_operation(
+                operation_type="account_settings_update",
+                user=user.username,
+                account_identifier=args.account,
+                success=True,
+                session_id=get_session_token(args),
+                additional_details={
+                    "changes_made": changes,
+                    "nickname": args.nickname,
+                    "overdraft_limit": args.overdraft_limit
+                }
+            )
+        else:
+            print("ℹ️  No changes were made (settings already match provided values)")
+            
+    except ValueError as e:
+        print(f"❌ Error: {e}")
+        
+        # Log failed update
+        audit_logger.log_banking_operation(
+            operation_type="account_settings_update",
+            user=user.username,
+            account_identifier=args.account,
+            success=False,
+            session_id=get_session_token(args),
+            additional_details={
+                "error": str(e),
+                "attempted_nickname": args.nickname,
+                "attempted_overdraft_limit": args.overdraft_limit
+            }
+        )
+        
+        # Show available accounts
+        print("\n💡 Available accounts:")
+        for account in user.accounts:
+            print(f"  • {account.get_display_name()}")
+    except Exception as e:
+        print(f"❌ Unexpected error: {e}")
+
+def view_account_settings(args):
+    """View current account settings"""
+    user = authenticate_user(args)
+    if not user:
+        return
+    
+    try:
+        settings = user.get_account_settings(args.account)
+        
+        print(f"\n🏦 ACCOUNT SETTINGS")
+        print("=" * 40)
+        print(f"Account: {settings['display_name']}")
+        print(f"Type: {settings['account_type'].capitalize()}")
+        print(f"Status: {'Active' if settings['is_active'] else 'Inactive'}")
+        print(f"Balance: ${settings['balance']:.2f}")
+        
+        if settings['nickname']:
+            print(f"Nickname: {settings['nickname']}")
+        else:
+            print("Nickname: Not set")
+        
+        if settings['account_type'] == 'current':
+            print(f"Overdraft Limit: ${settings['overdraft_limit']:.2f}")
+            available_balance = settings['balance'] + settings['overdraft_limit']
+            print(f"Available Balance: ${available_balance:.2f}")
+        
+        print(f"Created: {settings['created_date'].strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"Last Activity: {settings['last_activity'].strftime('%Y-%m-%d %H:%M:%S')}")
+        print("=" * 40)
+        
+    except ValueError as e:
+        print(f"❌ Error: {e}")
+        
+        # Show available accounts
+        print("\n💡 Available accounts:")
+        for account in user.accounts:
+            print(f"  • {account.get_display_name()}")
+    except Exception as e:
+        print(f"❌ Unexpected error: {e}")
+
+def deactivate_account(args):
+    """Deactivate an account"""
+    user = authenticate_user(args)
+    audit_logger = get_audit_logger()
+    
+    if not user:
+        return
+    
+    # Require confirmation for account deactivation
+    if not args.confirm:
+        print("⚠️  Account deactivation requires confirmation")
+        print("💡 Use: python main.py deactivate_account <account> --confirm")
+        print("⚠️  Deactivated accounts cannot be used for transactions until reactivated")
+        return
+    
+    try:
+        # Get account info before deactivation
+        account = user.get_account(args.account)
+        if not account:
+            raise ValueError(f"Account '{args.account}' not found")
+        
+        account_name = account.get_display_name()
+        
+        # Deactivate account
+        user.deactivate_account(args.account)
+        
+        print(f"✓ Account '{account_name}' has been deactivated")
+        print("ℹ️  The account can no longer be used for transactions")
+        print("ℹ️  Use 'reactivate_account' command to restore functionality")
+        
+        # Save changes
+        save_users_to_file(users)
+        
+        # Log successful deactivation
+        audit_logger.log_banking_operation(
+            operation_type="account_deactivate",
+            user=user.username,
+            account_identifier=args.account,
+            success=True,
+            session_id=get_session_token(args),
+            additional_details={
+                "account_name": account_name,
+                "balance_at_deactivation": account.balance
+            }
+        )
+        
+    except ValueError as e:
+        print(f"❌ Error: {e}")
+        
+        # Log failed deactivation
+        audit_logger.log_banking_operation(
+            operation_type="account_deactivate",
+            user=user.username,
+            account_identifier=args.account,
+            success=False,
+            session_id=get_session_token(args),
+            additional_details={"error": str(e)}
+        )
+        
+        # Show available accounts
+        print("\n💡 Available accounts:")
+        for account in user.accounts:
+            status = "Active" if account.is_active else "Inactive"
+            print(f"  • {account.get_display_name()} [{status}]")
+    except Exception as e:
+        print(f"❌ Unexpected error: {e}")
+
+def reactivate_account(args):
+    """Reactivate an account"""
+    user = authenticate_user(args)
+    audit_logger = get_audit_logger()
+    
+    if not user:
+        return
+    
+    try:
+        # Get account info before reactivation
+        account = user.get_account(args.account)
+        if not account:
+            raise ValueError(f"Account '{args.account}' not found")
+        
+        account_name = account.get_display_name()
+        
+        # Reactivate account
+        user.reactivate_account(args.account)
+        
+        print(f"✓ Account '{account_name}' has been reactivated")
+        print("ℹ️  The account can now be used for transactions")
+        
+        # Save changes
+        save_users_to_file(users)
+        
+        # Log successful reactivation
+        audit_logger.log_banking_operation(
+            operation_type="account_reactivate",
+            user=user.username,
+            account_identifier=args.account,
+            success=True,
+            session_id=get_session_token(args),
+            additional_details={
+                "account_name": account_name,
+                "balance_at_reactivation": account.balance
+            }
+        )
+        
+    except ValueError as e:
+        print(f"❌ Error: {e}")
+        
+        # Log failed reactivation
+        audit_logger.log_banking_operation(
+            operation_type="account_reactivate",
+            user=user.username,
+            account_identifier=args.account,
+            success=False,
+            session_id=get_session_token(args),
+            additional_details={"error": str(e)}
+        )
+        
+        # Show available accounts
+        print("\n💡 Available accounts:")
+        for account in user.accounts:
+            status = "Active" if account.is_active else "Inactive"
+            print(f"  • {account.get_display_name()} [{status}]")
+    except Exception as e:
+        print(f"❌ Unexpected error: {e}")
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -734,6 +1787,260 @@ For interactive mode with menus:
     interactive_parser = subparsers.add_parser("interactive", help="Start interactive banking session")
     interactive_parser.add_argument("--token", type=str, help="Session token (optional if saved in .session file)")
     interactive_parser.set_defaults(func=interactive)
+
+    # generate statement command
+    statement_parser = subparsers.add_parser("generate_statement", help="Generate account statement for specified period")
+    statement_parser.add_argument("account", type=str, help="Account identifier (type or nickname)")
+    statement_parser.add_argument("--start-date", type=str, help="Start date (YYYY-MM-DD, YYYY-MM-DD HH:MM, MM/DD/YYYY, DD/MM/YYYY)")
+    statement_parser.add_argument("--end-date", type=str, help="End date (YYYY-MM-DD, YYYY-MM-DD HH:MM, MM/DD/YYYY, DD/MM/YYYY)")
+    statement_parser.add_argument("--format", choices=['text', 'pdf'], default='text', help="Statement format (default: text)")
+    statement_parser.add_argument("--export", action='store_true', help="Export statement to file")
+    statement_parser.add_argument("--filename", type=str, help="Custom filename for export")
+    statement_parser.add_argument("--token", type=str, help="Session token (optional if saved in .session file)")
+    statement_parser.set_defaults(func=generate_statement)
+
+    # export data command
+    export_parser = subparsers.add_parser("export_data", help="Export account or transaction data to file")
+    export_parser.add_argument("data_type", choices=['transactions', 'accounts', 'full_backup'], help="Type of data to export")
+    export_parser.add_argument("format", choices=['csv', 'json'], help="Export format")
+    export_parser.add_argument("--account", type=str, help="Account identifier for transaction export (type or nickname)")
+    export_parser.add_argument("--start-date", type=str, help="Start date for transaction export (YYYY-MM-DD, YYYY-MM-DD HH:MM, MM/DD/YYYY, DD/MM/YYYY)")
+    export_parser.add_argument("--end-date", type=str, help="End date for transaction export (YYYY-MM-DD, YYYY-MM-DD HH:MM, MM/DD/YYYY, DD/MM/YYYY)")
+    export_parser.add_argument("--filename", type=str, help="Custom filename for export")
+    export_parser.add_argument("--token", type=str, help="Session token (optional if saved in .session file)")
+    export_parser.set_defaults(func=export_data)
+
+    # import data command
+    import_parser = subparsers.add_parser("import_data", help="Import account or transaction data from file")
+    import_parser.add_argument("data_type", choices=['transactions', 'accounts'], help="Type of data to import")
+    import_parser.add_argument("filepath", type=str, help="Path to import file")
+    import_parser.add_argument("--validate-only", action='store_true', help="Only validate the file without importing")
+    import_parser.add_argument("--token", type=str, help="Session token (optional if saved in .session file)")
+    import_parser.set_defaults(func=import_data)
+
+    # audit_logs command
+    audit_logs_parser = subparsers.add_parser(
+        "audit_logs",
+        help="View audit logs and system activity",
+        description="Access audit logs with filtering options for administrators"
+    )
+    audit_logs_parser.add_argument(
+        "--user",
+        type=str,
+        help="Filter logs by specific user"
+    )
+    audit_logs_parser.add_argument(
+        "--event-type",
+        type=str,
+        choices=['login_success', 'login_failure', 'logout', 'deposit', 'withdrawal', 'transfer', 'balance_inquiry', 'error'],
+        help="Filter logs by event type"
+    )
+    audit_logs_parser.add_argument(
+        "--hours",
+        type=int,
+        default=24,
+        help="Number of hours to look back (default: 24)"
+    )
+    audit_logs_parser.add_argument(
+        "--limit",
+        type=int,
+        default=100,
+        help="Maximum number of entries to show (default: 100)"
+    )
+    audit_logs_parser.add_argument(
+        "--failed-only",
+        action="store_true",
+        help="Show only failed operations"
+    )
+    audit_logs_parser.add_argument(
+        "--token",
+        type=str,
+        help="Session token (optional if saved in .session file)"
+    )
+    audit_logs_parser.set_defaults(func=view_audit_logs)
+
+    # audit_stats command
+    audit_stats_parser = subparsers.add_parser(
+        "audit_stats",
+        help="View audit log statistics",
+        description="Display audit log statistics and system activity summary"
+    )
+    audit_stats_parser.add_argument(
+        "--hours",
+        type=int,
+        default=24,
+        help="Number of hours to analyze (default: 24)"
+    )
+    audit_stats_parser.add_argument(
+        "--token",
+        type=str,
+        help="Session token (optional if saved in .session file)"
+    )
+    audit_stats_parser.set_defaults(func=view_audit_stats)
+
+    # batch_operations command
+    batch_operations_parser = subparsers.add_parser(
+        "batch_operations",
+        help="Process batch operations from file",
+        description="Execute multiple banking operations from CSV or JSON batch files"
+    )
+    batch_operations_parser.add_argument(
+        "file",
+        type=str,
+        help="Path to batch operations file (CSV or JSON format)"
+    )
+    batch_operations_parser.add_argument(
+        "--preview",
+        action="store_true",
+        help="Preview operations without executing (validation only)"
+    )
+    batch_operations_parser.add_argument(
+        "--report",
+        action="store_true",
+        help="Generate detailed report file after processing"
+    )
+    batch_operations_parser.add_argument(
+        "--token",
+        type=str,
+        help="Session token (optional if saved in .session file)"
+    )
+    batch_operations_parser.set_defaults(func=batch_operations)
+
+    # batch_template command
+    batch_template_parser = subparsers.add_parser(
+        "batch_template",
+        help="Create batch operation template file",
+        description="Generate template files for batch operations with examples"
+    )
+    batch_template_parser.add_argument(
+        "filename",
+        type=str,
+        help="Template filename to create"
+    )
+    batch_template_parser.add_argument(
+        "--format",
+        choices=['csv', 'json'],
+        default='csv',
+        help="Template format (default: csv)"
+    )
+    batch_template_parser.add_argument(
+        "--token",
+        type=str,
+        help="Session token (optional if saved in .session file)"
+    )
+    batch_template_parser.set_defaults(func=batch_template)
+
+    # batch_status command
+    batch_status_parser = subparsers.add_parser(
+        "batch_status",
+        help="Show batch operation status and history",
+        description="Display recent batch operation history and status"
+    )
+    batch_status_parser.add_argument(
+        "--hours",
+        type=int,
+        default=24,
+        help="Number of hours to look back (default: 24)"
+    )
+    batch_status_parser.add_argument(
+        "--limit",
+        type=int,
+        default=10,
+        help="Maximum number of batch operations to show (default: 10)"
+    )
+    batch_status_parser.add_argument(
+        "--token",
+        type=str,
+        help="Session token (optional if saved in .session file)"
+    )
+    batch_status_parser.set_defaults(func=batch_status)
+
+    # update_account_settings command
+    update_account_settings_parser = subparsers.add_parser(
+        "update_account_settings",
+        help="Update account settings (nickname and overdraft limit)",
+        description="Modify account nickname and overdraft limit settings"
+    )
+    update_account_settings_parser.add_argument(
+        "account",
+        type=str,
+        help="Account identifier (account type or nickname)"
+    )
+    update_account_settings_parser.add_argument(
+        "--nickname",
+        type=str,
+        help="New nickname for the account"
+    )
+    update_account_settings_parser.add_argument(
+        "--overdraft-limit",
+        type=float,
+        help="New overdraft limit (only for current accounts)"
+    )
+    update_account_settings_parser.add_argument(
+        "--token",
+        type=str,
+        help="Session token (optional if saved in .session file)"
+    )
+    update_account_settings_parser.set_defaults(func=update_account_settings)
+
+    # view_account_settings command
+    view_account_settings_parser = subparsers.add_parser(
+        "view_account_settings",
+        help="View current account settings",
+        description="Display detailed settings for a specific account"
+    )
+    view_account_settings_parser.add_argument(
+        "account",
+        type=str,
+        help="Account identifier (account type or nickname)"
+    )
+    view_account_settings_parser.add_argument(
+        "--token",
+        type=str,
+        help="Session token (optional if saved in .session file)"
+    )
+    view_account_settings_parser.set_defaults(func=view_account_settings)
+
+    # deactivate_account command
+    deactivate_account_parser = subparsers.add_parser(
+        "deactivate_account",
+        help="Deactivate an account",
+        description="Deactivate an account to prevent transactions while preserving data"
+    )
+    deactivate_account_parser.add_argument(
+        "account",
+        type=str,
+        help="Account identifier (account type or nickname)"
+    )
+    deactivate_account_parser.add_argument(
+        "--confirm",
+        action="store_true",
+        help="Confirm account deactivation"
+    )
+    deactivate_account_parser.add_argument(
+        "--token",
+        type=str,
+        help="Session token (optional if saved in .session file)"
+    )
+    deactivate_account_parser.set_defaults(func=deactivate_account)
+
+    # reactivate_account command
+    reactivate_account_parser = subparsers.add_parser(
+        "reactivate_account",
+        help="Reactivate an account",
+        description="Reactivate a previously deactivated account"
+    )
+    reactivate_account_parser.add_argument(
+        "account",
+        type=str,
+        help="Account identifier (account type or nickname)"
+    )
+    reactivate_account_parser.add_argument(
+        "--token",
+        type=str,
+        help="Session token (optional if saved in .session file)"
+    )
+    reactivate_account_parser.set_defaults(func=reactivate_account)
 
     return parser.parse_args()
 

@@ -361,6 +361,160 @@ class HelpSystem:
             ],
             'related_commands': ['login', 'logout'],
             'common_errors': []
+        },
+        
+        'audit_logs': {
+            'description': 'View audit logs and system activity with filtering options',
+            'usage': 'python main.py audit_logs [options]',
+            'arguments': [
+                ('--user', 'Filter logs by specific user', False),
+                ('--event-type', 'Filter by event type (login_success, login_failure, deposit, etc.)', False),
+                ('--hours', 'Number of hours to look back (default: 24)', False),
+                ('--limit', 'Maximum number of entries to show (default: 100)', False),
+                ('--failed-only', 'Show only failed operations', False),
+                ('--token', 'Session token (optional if saved in .session file)', False)
+            ],
+            'examples': [
+                'python main.py audit_logs',
+                'python main.py audit_logs --user john_doe --hours 48',
+                'python main.py audit_logs --event-type login_failure --failed-only',
+                'python main.py audit_logs --limit 50 --hours 12'
+            ],
+            'notes': [
+                'Requires authentication to access audit logs',
+                'Shows timestamps, users, events, and operation details',
+                'Useful for security monitoring and troubleshooting'
+            ],
+            'related_commands': ['audit_stats', 'status'],
+            'common_errors': [
+                ('No logs found', 'Try expanding the time range with --hours'),
+                ('Access denied', 'Ensure you are logged in with proper permissions')
+            ]
+        },
+        
+        'audit_stats': {
+            'description': 'View audit log statistics and system activity summary',
+            'usage': 'python main.py audit_stats [--hours <hours>]',
+            'arguments': [
+                ('--hours', 'Number of hours to analyze (default: 24)', False),
+                ('--token', 'Session token (optional if saved in .session file)', False)
+            ],
+            'examples': [
+                'python main.py audit_stats',
+                'python main.py audit_stats --hours 48',
+                'python main.py audit_stats --hours 168'  # One week
+            ],
+            'notes': [
+                'Shows summary statistics for system activity',
+                'Includes login attempts, operation counts, and user activity',
+                'Useful for system monitoring and usage analysis'
+            ],
+            'related_commands': ['audit_logs', 'status'],
+            'common_errors': [
+                ('No data available', 'System may be newly installed or logs cleared'),
+                ('Access denied', 'Ensure you are logged in with proper permissions')
+            ]
+        },
+        
+        'update_account_settings': {
+            'description': 'Update account settings (nickname and overdraft limit)',
+            'usage': 'python main.py update_account_settings <account> [--nickname <name>] [--overdraft-limit <amount>]',
+            'arguments': [
+                ('account', 'Account identifier (account type or nickname)', True),
+                ('--nickname', 'New nickname for the account', False),
+                ('--overdraft-limit', 'New overdraft limit (only for current accounts)', False),
+                ('--token', 'Session token (optional if saved in .session file)', False)
+            ],
+            'examples': [
+                'python main.py update_account_settings savings --nickname "Emergency Fund"',
+                'python main.py update_account_settings current --overdraft-limit 500',
+                'python main.py update_account_settings "My Savings" --nickname "Vacation Fund"',
+                'python main.py update_account_settings current --nickname "Main Checking" --overdraft-limit 300'
+            ],
+            'notes': [
+                'At least one setting (nickname or overdraft limit) must be provided',
+                'Overdraft limits can only be set for current accounts',
+                'Nicknames help identify accounts more easily',
+                'Changes are saved immediately and logged for audit'
+            ],
+            'related_commands': ['view_account_settings', 'list_accounts', 'account_summary'],
+            'common_errors': [
+                ('Account not found', 'Check account identifier or use list_accounts to see available accounts'),
+                ('Cannot update overdraft limit', 'Overdraft limits only apply to current accounts'),
+                ('No settings provided', 'Specify at least --nickname or --overdraft-limit')
+            ]
+        },
+        
+        'view_account_settings': {
+            'description': 'View current account settings and details',
+            'usage': 'python main.py view_account_settings <account>',
+            'arguments': [
+                ('account', 'Account identifier (account type or nickname)', True),
+                ('--token', 'Session token (optional if saved in .session file)', False)
+            ],
+            'examples': [
+                'python main.py view_account_settings savings',
+                'python main.py view_account_settings current',
+                'python main.py view_account_settings "My Savings"'
+            ],
+            'notes': [
+                'Shows detailed account information including status and settings',
+                'Displays nickname, overdraft limits, and activity timestamps',
+                'Useful for checking account configuration before making changes'
+            ],
+            'related_commands': ['update_account_settings', 'account_summary', 'list_accounts'],
+            'common_errors': [
+                ('Account not found', 'Check account identifier or use list_accounts to see available accounts')
+            ]
+        },
+        
+        'deactivate_account': {
+            'description': 'Deactivate an account to prevent transactions',
+            'usage': 'python main.py deactivate_account <account> --confirm',
+            'arguments': [
+                ('account', 'Account identifier (account type or nickname)', True),
+                ('--confirm', 'Required confirmation flag for account deactivation', True),
+                ('--token', 'Session token (optional if saved in .session file)', False)
+            ],
+            'examples': [
+                'python main.py deactivate_account savings --confirm',
+                'python main.py deactivate_account "Old Account" --confirm'
+            ],
+            'notes': [
+                'Deactivated accounts cannot be used for transactions',
+                'Account data and balance are preserved',
+                'Use reactivate_account to restore functionality',
+                'Confirmation flag is required to prevent accidental deactivation'
+            ],
+            'related_commands': ['reactivate_account', 'view_account_settings', 'list_accounts'],
+            'common_errors': [
+                ('Account not found', 'Check account identifier or use list_accounts to see available accounts'),
+                ('Account already deactivated', 'Account is already inactive'),
+                ('Confirmation required', 'Add --confirm flag to proceed with deactivation')
+            ]
+        },
+        
+        'reactivate_account': {
+            'description': 'Reactivate a previously deactivated account',
+            'usage': 'python main.py reactivate_account <account>',
+            'arguments': [
+                ('account', 'Account identifier (account type or nickname)', True),
+                ('--token', 'Session token (optional if saved in .session file)', False)
+            ],
+            'examples': [
+                'python main.py reactivate_account savings',
+                'python main.py reactivate_account "Old Account"'
+            ],
+            'notes': [
+                'Restores full functionality to deactivated accounts',
+                'Account can immediately be used for transactions after reactivation',
+                'All previous data and settings are preserved'
+            ],
+            'related_commands': ['deactivate_account', 'view_account_settings', 'list_accounts'],
+            'common_errors': [
+                ('Account not found', 'Check account identifier or use list_accounts to see available accounts'),
+                ('Account already active', 'Account is already active and functional')
+            ]
         }
     }
     

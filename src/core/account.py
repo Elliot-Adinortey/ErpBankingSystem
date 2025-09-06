@@ -11,23 +11,54 @@ class Account:
         self.transactions = []
         self.created_date = datetime.now()
         self.last_activity = datetime.now()
+        self.is_active = True  # Account activation status
 
     def update_nickname(self, nickname):
         """Update the account nickname"""
         self.nickname = nickname
         self.update_activity()
 
+    def update_overdraft_limit(self, new_limit):
+        """Update the overdraft limit for current accounts"""
+        if self.account_type != 'current':
+            raise ValueError("Overdraft limit can only be set for current accounts")
+        if new_limit < 0:
+            raise ValueError("Overdraft limit cannot be negative")
+        
+        old_limit = self.overdraft_limit
+        self.overdraft_limit = new_limit
+        self.update_activity()
+        return old_limit
+
+    def deactivate(self):
+        """Deactivate the account"""
+        if not self.is_active:
+            raise ValueError("Account is already deactivated")
+        self.is_active = False
+        self.update_activity()
+
+    def reactivate(self):
+        """Reactivate the account"""
+        if self.is_active:
+            raise ValueError("Account is already active")
+        self.is_active = True
+        self.update_activity()
+
     def get_display_name(self):
         """Get display name for the account (nickname if available, otherwise account type)"""
-        if self.nickname:
-            return f"{self.nickname} ({self.account_type})"
-        return self.account_type.capitalize()
+        base_name = f"{self.nickname} ({self.account_type})" if self.nickname else self.account_type.capitalize()
+        if not self.is_active:
+            base_name += " [INACTIVE]"
+        return base_name
 
     def update_activity(self):
         """Update the last activity timestamp"""
         self.last_activity = datetime.now()
 
     def deposit(self, amount):
+        if not self.is_active:
+            print("Error: Cannot deposit to inactive account.")
+            return
         if amount <= 0:
             print("Error: Deposit amount must be positive.")
             return
@@ -37,6 +68,9 @@ class Account:
         print(f"Deposit of ${amount} successful. New balance: ${self.balance}")
 
     def withdraw(self, amount):
+        if not self.is_active:
+            print("Error: Cannot withdraw from inactive account.")
+            return
         if amount <= 0:
             print("Error: Withdrawal amount must be positive.")
             return
@@ -204,6 +238,73 @@ class AccountManager:
         
         return overview
 
+    def update_account_settings(self, account_identifier, nickname=None, overdraft_limit=None):
+        """Update account settings (nickname and/or overdraft limit)"""
+        account = self.get_account_by_identifier(account_identifier)
+        if not account:
+            raise ValueError(f"Account '{account_identifier}' not found")
+        
+        changes_made = []
+        
+        # Update nickname if provided
+        if nickname is not None:
+            old_nickname = account.nickname
+            account.update_nickname(nickname)
+            if old_nickname != nickname:
+                changes_made.append(f"nickname: '{old_nickname}' -> '{nickname}'")
+        
+        # Update overdraft limit if provided
+        if overdraft_limit is not None:
+            try:
+                old_limit = account.update_overdraft_limit(overdraft_limit)
+                if old_limit != overdraft_limit:
+                    changes_made.append(f"overdraft limit: ${old_limit} -> ${overdraft_limit}")
+            except ValueError as e:
+                raise ValueError(f"Cannot update overdraft limit: {e}")
+        
+        return changes_made
+
+    def deactivate_account(self, account_identifier):
+        """Deactivate an account"""
+        account = self.get_account_by_identifier(account_identifier)
+        if not account:
+            raise ValueError(f"Account '{account_identifier}' not found")
+        
+        try:
+            account.deactivate()
+            return True
+        except ValueError as e:
+            raise ValueError(f"Cannot deactivate account: {e}")
+
+    def reactivate_account(self, account_identifier):
+        """Reactivate an account"""
+        account = self.get_account_by_identifier(account_identifier)
+        if not account:
+            raise ValueError(f"Account '{account_identifier}' not found")
+        
+        try:
+            account.reactivate()
+            return True
+        except ValueError as e:
+            raise ValueError(f"Cannot reactivate account: {e}")
+
+    def get_account_settings(self, account_identifier):
+        """Get current account settings"""
+        account = self.get_account_by_identifier(account_identifier)
+        if not account:
+            raise ValueError(f"Account '{account_identifier}' not found")
+        
+        return {
+            'account_type': account.account_type,
+            'nickname': account.nickname,
+            'overdraft_limit': account.overdraft_limit,
+            'is_active': account.is_active,
+            'balance': account.balance,
+            'created_date': account.created_date,
+            'last_activity': account.last_activity,
+            'display_name': account.get_display_name()
+        }
+
     def list_accounts_with_nicknames(self):
         """List all accounts with their display names"""
         accounts_list = []
@@ -212,6 +313,7 @@ class AccountManager:
                 'type': account.account_type,
                 'nickname': account.nickname,
                 'display_name': account.get_display_name(),
-                'balance': account.balance
+                'balance': account.balance,
+                'is_active': account.is_active
             })
         return accounts_list

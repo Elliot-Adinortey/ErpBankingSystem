@@ -1,0 +1,41 @@
+{
+  "export_info": {
+    "username": "testuser",
+    "email": "test@example.com",
+    "export_date": "2025-09-02 04:49:12",
+    "total_accounts": 2
+  },
+  "accounts": [
+    {
+      "account_type": "savings",
+      "nickname": null,
+      "balance": 1050.0,
+      "overdraft_limit": 0,
+      "created_date": "2025-09-02 04:49:12",
+      "last_activity": "2025-09-02 04:49:12",
+      "transaction_count": 2,
+      "transactions": [
+        {
+          "date": "2025-09-02 04:48:13",
+          "amount": 100.0,
+          "transaction_type": "deposit"
+        },
+        {
+          "date": "2025-09-02 04:48:21",
+          "amount": 50.0,
+          "transaction_type": "withdrawal"
+        }
+      ]
+    },
+    {
+      "account_type": "current",
+      "nickname": null,
+      "balance": 500.0,
+      "overdraft_limit": 200.0,
+      "created_date": "2025-09-02 04:49:12",
+      "last_activity": "2025-09-02 04:49:12",
+      "transaction_count": 0,
+      "transactions": []
+    }
+  ]
+}

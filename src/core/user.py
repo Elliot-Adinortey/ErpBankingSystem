@@ -104,6 +104,22 @@ class User:
         """Export transactions to specified format"""
         return self.transaction_manager.export_transactions(transactions, format)
 
+    def update_account_settings(self, account_identifier, nickname=None, overdraft_limit=None):
+        """Update account settings using AccountManager"""
+        return self.account_manager.update_account_settings(account_identifier, nickname, overdraft_limit)
+
+    def deactivate_account(self, account_identifier):
+        """Deactivate an account using AccountManager"""
+        return self.account_manager.deactivate_account(account_identifier)
+
+    def reactivate_account(self, account_identifier):
+        """Reactivate an account using AccountManager"""
+        return self.account_manager.reactivate_account(account_identifier)
+
+    def get_account_settings(self, account_identifier):
+        """Get account settings using AccountManager"""
+        return self.account_manager.get_account_settings(account_identifier)
+
 def register_user(users, username, password, email):
     if not re.match(r"^[A-Za-z0-9_]+$", username):
         print("Error: Username can only contain letters, numbers, and underscore")
